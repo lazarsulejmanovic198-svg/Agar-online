@@ -168,13 +168,15 @@ let food = [], viruses = [], owners = [];
 let me = null, minion = null, crew = [], ctrl = null, now = 0, playing = false, maxMass = 0;
 let networkSocket = null, networkId = null, lastNetworkSend = 0, networkFull = false;
 const remotePlayers = new Map();
+const REMOTE_INTERPOLATION_DELAY = 100;
+let nextCellId = 0;
 const netStatus = document.getElementById('net-status'); const nameInput = document.getElementById('name');
 function setNetworkStatus(text) { netStatus.textContent = text; }
 function sendNetwork(data) {
   if (networkSocket && networkSocket.readyState === WebSocket.OPEN) networkSocket.send(JSON.stringify(data));
 }
 function selectedPlayerName() { return nameInput.value.trim() || 'Igrač'; } function playerSnapshot() {
-  return { name: me.name, color: me.color, cells: me.cells.map(c => ({ x: c.x, y: c.y, m: c.m })) };
+  return { name: me.name, color: me.color, cells: me.cells.map(c => ({ id: c.id, x: c.x, y: c.y, m: c.m })) };
 }
 function applyWorld(players) {
   const seen = new Set();
@@ -183,21 +185,56 @@ function applyWorld(players) {
     seen.add(p.id);
     let o = remotePlayers.get(p.id);
     if (!o) {
-      o = { id: p.id, name: p.name, bot: false, remote: true, color: p.color, cells: [], team: null, sk: 0 };
+      o = { id: p.id, name: p.name, bot: false, remote: true, color: p.color, cells: [], snapshots: [], remoteCells: new Map(), team: null, sk: 0 };
       remotePlayers.set(p.id, o); owners.push(o);
     }
     o.name = p.name; o.color = p.color;
-    const previous = o.cells;
-    o.cells = p.cells.map((data, i) => {
-      const c = previous[i] || mkCell(o, data.x, data.y, data.m);
-      c.o = o; c.netX = data.x; c.netY = data.y; c.m = data.m;
-      return c;
+    o.snapshots.push({
+      time: performance.now(),
+      cells: p.cells.map((data, i) => ({ id: Number.isSafeInteger(data.id) ? data.id : i, x: data.x, y: data.y, m: data.m }))
     });
+    if (o.snapshots.length > 8) o.snapshots.shift();
   }
   for (const [id, o] of remotePlayers) {
     if (!seen.has(id)) { owners = owners.filter(x => x !== o); remotePlayers.delete(id); }
   }
   setNetworkStatus(`Povezani igrači: ${players.length}`);
+}
+function updateRemotePlayers(renderTime) {
+  for (const o of remotePlayers.values()) {
+    const snapshots = o.snapshots;
+    if (!snapshots.length) continue;
+    let afterIndex = snapshots.findIndex(snapshot => snapshot.time >= renderTime);
+    if (afterIndex < 0) afterIndex = snapshots.length - 1;
+    const after = snapshots[afterIndex];
+    const before = snapshots[Math.max(0, afterIndex - 1)];
+    const alpha = before.time === after.time ? 0 :
+      clamp((renderTime - before.time) / (after.time - before.time), 0, 1);
+    const beforeCells = new Map(before.cells.map(cell => [cell.id, cell]));
+    const afterCells = new Map(after.cells.map(cell => [cell.id, cell]));
+    const ids = new Set([...beforeCells.keys(), ...afterCells.keys()]);
+    const cells = [];
+    for (const id of ids) {
+      const start = beforeCells.get(id), end = afterCells.get(id);
+      if ((!start && renderTime < after.time) || (!end && renderTime >= after.time)) continue;
+      const from = start || end, to = end || start;
+      const x = from.x + (to.x - from.x) * alpha;
+      const y = from.y + (to.y - from.y) * alpha;
+      const m = from.m + (to.m - from.m) * alpha;
+      let cell = o.remoteCells.get(id);
+      if (!cell) {
+        cell = mkCell(o, x, y, m, id);
+        o.remoteCells.set(id, cell);
+      }
+      cell.px = cell.x; cell.py = cell.y;
+      cell.x = x; cell.y = y; cell.m = m;
+      cells.push(cell);
+    }
+    o.cells = cells;
+    const bufferedIds = new Set();
+    for (const snapshot of snapshots) for (const cell of snapshot.cells) bufferedIds.add(cell.id);
+    for (const id of o.remoteCells.keys()) if (!bufferedIds.has(id)) o.remoteCells.delete(id);
+  }
 }
 function connectHost() {
   networkFull = false;
@@ -245,7 +282,7 @@ let zoom = 1, zoomT = 1;   // zoom točkićem miša (glatko)
 
 const mkFood = () => ({ x: rnd(0, WS), y: rnd(0, WS), m: 1, vx: 0, vy: 0, c: foodHue(), free: 0 });
 const mkVirus = () => ({ x: rnd(300, WS - 300), y: rnd(300, WS - 300), m: VIRUS_MASS });
-const mkCell = (o, x, y, m) => ({ o, x, y, px: x, py: y, m, bx: 0, by: 0, t: 0, dead: false });
+const mkCell = (o, x, y, m, id) => ({ id: id === undefined ? ++nextCellId : id, o, x, y, px: x, py: y, m, bx: 0, by: 0, t: 0, dead: false });
 const mergeTime = m => now + MERGE_TIME;
 
 function spawn(o) {
@@ -338,14 +375,7 @@ function tick(dt) {
   }
 
   for (const o of owners) {
-    if (o.remote) {
-      const smooth = 1 - Math.exp(-20 * dt);
-      for (const c of o.cells) {
-        c.px = c.x; c.py = c.y;
-        c.x += (c.netX - c.x) * smooth; c.y += (c.netY - c.y) * smooth;
-      }
-      continue;
-    }
+    if (o.remote) continue;
     if (!o.cells.length) {
       if (o.bot) {
         if (!o.respawnAt) o.respawnAt = now + 3;
@@ -461,7 +491,8 @@ function tick(dt) {
 // ---------- crtanje ----------
 const total = o => o.cells.reduce((s, c) => s + c.m, 0);
 
-const ix = c => c.px + (c.x - c.px) * ALPHA, iy = c => c.py + (c.y - c.py) * ALPHA;
+const ix = c => c.o.remote ? c.x : c.px + (c.x - c.px) * ALPHA;
+const iy = c => c.o.remote ? c.y : c.py + (c.y - c.py) * ALPHA;
 
 function draw() {
   const team = ctrl ? ctrl.cells : [];
@@ -601,6 +632,7 @@ function frame(t) {
     sendNetwork({ type: 'state', player: playerSnapshot() });
     lastNetworkSend = t;
   }
+  updateRemotePlayers(t - REMOTE_INTERPOLATION_DELAY);
   draw();
   if (++fr % 10 === 0) updateHud();
   requestAnimationFrame(frame);
