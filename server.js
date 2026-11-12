@@ -17,7 +17,7 @@ function send(ws, data) {
 
 function worldSnapshot() {
   return Array.from(players.values())
-    .filter(p => p.active)
+    .filter(p => sockets.has(p.id))
     .map(p => ({ id: p.id, name: p.name, color: p.color, cells: p.cells }));
 }
 
@@ -29,19 +29,19 @@ function broadcastWorld() {
   broadcast({ type: 'world', players: worldSnapshot() });
 }
 
-function validPlayer(input) {
+function validName(input) { return String(input || 'Igrač').replace(/[\u0000-\u001f]/g, '').slice(0, 12) || 'Igrač'; } function validPlayer(input) {
   if (!input || typeof input !== 'object' || !Array.isArray(input.cells)) return null;
   const cells = input.cells.slice(0, MAX_CELLS);
   if (cells.some(c => !c || !Number.isFinite(c.x) || !Number.isFinite(c.y) ||
       !Number.isFinite(c.m) || c.x < 0 || c.x > WORLD_SIZE ||
       c.y < 0 || c.y > WORLD_SIZE || c.m <= 0 || c.m > 1000000)) return null;
-  const name = String(input.name || 'Igrač').replace(/[\u0000-\u001f]/g, '').slice(0, 12) || 'Igrač';
+  const name = validName(input.name);
   const color = /^hsl\(\d{1,3},100%,50%\)$/.test(input.color) ? input.color : 'hsl(140,100%,50%)';
   return { name, color, cells: cells.map(c => ({ x: c.x, y: c.y, m: c.m })) };
 }
 
 function resolvePlayerCollisions() {
-  const active = Array.from(players.values()).filter(p => p.active);
+  const active = Array.from(players.values()).filter(p => sockets.has(p.id));
   for (let i = 0; i < active.length; i++) {
     for (let j = i + 1; j < active.length; j++) {
       const a = active[i], b = active[j];
@@ -140,7 +140,7 @@ wsServer.on('connection', ws => {
     catch (err) { console.warn('Odbijena je neispravna poruka klijenta.'); return; }
     const player = players.get(id);
     if (!player) return;
-    if (msg.type === 'spawn' || msg.type === 'state') {
+    if (msg.type === 'join') { player.name = validName(msg.name); broadcastWorld(); return; } if (msg.type === 'spawn' || msg.type === 'state') {
       const next = validPlayer(msg.player);
       if (!next || (msg.type === 'state' && !player.active)) return;
       Object.assign(player, next, { active: true });
