@@ -168,12 +168,12 @@ let food = [], viruses = [], owners = [];
 let me = null, minion = null, crew = [], ctrl = null, now = 0, playing = false, maxMass = 0;
 let networkSocket = null, networkId = null, lastNetworkSend = 0, networkFull = false;
 const remotePlayers = new Map();
-const netStatus = document.getElementById('net-status');
+const netStatus = document.getElementById('net-status'); const nameInput = document.getElementById('name');
 function setNetworkStatus(text) { netStatus.textContent = text; }
 function sendNetwork(data) {
   if (networkSocket && networkSocket.readyState === WebSocket.OPEN) networkSocket.send(JSON.stringify(data));
 }
-function playerSnapshot() {
+function selectedPlayerName() { return nameInput.value.trim() || 'Igrač'; } function playerSnapshot() {
   return { name: me.name, color: me.color, cells: me.cells.map(c => ({ x: c.x, y: c.y, m: c.m })) };
 }
 function applyWorld(players) {
@@ -208,7 +208,7 @@ function connectHost() {
   }
   const scheme = location.protocol === 'https:' ? 'wss:' : 'ws:';
   networkSocket = new WebSocket(`${scheme}//${location.host}/game?room=${encodeURIComponent(room)}`);
-  networkSocket.addEventListener('open', () => setNetworkStatus('Povezivanje...'));
+  networkSocket.addEventListener('open', () => { setNetworkStatus('Povezivanje...'); sendNetwork({ type: 'join', name: selectedPlayerName() }); });
   networkSocket.addEventListener('message', event => {
     let msg;
     try { msg = JSON.parse(event.data); }
@@ -571,16 +571,16 @@ function draw() {
 }
 
 function updateHud() {
-  const list = owners.filter(o => o.cells.length && !o.bot).map(o => ({ o, m: total(o) })).sort((a, b) => b.m - a.m).slice(0, 10);
+  const list = owners.filter(o => !o.bot && (o.cells.length || o.remote)).map(o => ({ o, m: total(o) })).sort((a, b) => b.m - a.m).slice(0, 10);
   const hud = document.getElementById('hud');
   hud.replaceChildren();
   const heading = document.createElement('b');
-  heading.textContent = 'NAJBOLJIH 10';
+  heading.textContent = 'IGRAČI U SOBI';
   hud.append(heading);
   for (let i = 0; i < list.length; i++) {
     const entry = list[i], row = document.createElement('div');
     if (entry.o.team) row.className = 'me';
-    row.textContent = `${i + 1}. ${entry.o.name || 'Računar'} — ${Math.floor(entry.m)}`;
+    row.textContent = `${i + 1}. ${entry.o.name || 'Računar'} — ${entry.o.cells.length ? Math.floor(entry.m) : 'čeka'}`;
     hud.append(row);
   }
   if (me) {
@@ -704,7 +704,7 @@ addEventListener('blur', () => { wHeld = false; });
 function startGame() {
   minion = null;
   owners = owners.filter(o => !crew.includes(o));
-  const name = document.getElementById('name').value.trim() || 'Igrač';
+  const name = selectedPlayerName();
   me = newOwner(name, false);
   me.team = 'tim'; crew = [me]; ctrl = me;
   const m0 = me.cells[0];
