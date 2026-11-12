@@ -60,7 +60,7 @@ canvas{display:block}
 #menu button:hover{transform:translateY(-1px);background:#7bd0ff;box-shadow:0 7px 22px rgba(67,150,255,.25)}
 #menu button:active{transform:translateY(0)}
 #menu small{color:#aab7af;font-size:12px;line-height:1.55}
-#hud{position:fixed;top:10px;right:10px;background:#0007;padding:8px 12px;border-radius:8px;min-width:160px;font-size:14px}
+#hud{position:fixed;top:10px;right:10px;max-height:calc(100vh - 40px);overflow-y:auto;background:#0007;padding:8px 12px;border-radius:8px;min-width:160px;font-size:14px}
 #hud b{display:block;margin-bottom:4px}
 #hud div.me{color:#00ff6a;font-weight:700}
 #score{position:fixed;left:10px;top:10px;background:#0007;padding:6px 10px;border-radius:8px;font-size:14px}
@@ -197,17 +197,17 @@ function applyWorld(players) {
   for (const [id, o] of remotePlayers) {
     if (!seen.has(id)) { owners = owners.filter(x => x !== o); remotePlayers.delete(id); }
   }
-  setNetworkStatus(`Povezani igrači: ${players.length}/2`);
+  setNetworkStatus(`Povezani igrači: ${players.length}`);
 }
 function connectHost() {
   networkFull = false;
-  const room = new URLSearchParams(location.search).get('room');
-  if (!room || location.protocol === 'file:') {
+  
+  if (location.protocol === 'file:') {
     setNetworkStatus('Pokreni server i otvori njegov link za igru.');
     return;
   }
   const scheme = location.protocol === 'https:' ? 'wss:' : 'ws:';
-  networkSocket = new WebSocket(`${scheme}//${location.host}/game?room=${encodeURIComponent(room)}`);
+  networkSocket = new WebSocket(`${scheme}//${location.host}/game`);
   networkSocket.addEventListener('open', () => { setNetworkStatus('Povezivanje...'); sendNetwork({ type: 'join', name: selectedPlayerName() }); });
   networkSocket.addEventListener('message', event => {
     let msg;
@@ -223,7 +223,7 @@ function connectHost() {
       if (msg.eaterId === networkId && me && me.cells[msg.eaterCell]) me.cells[msg.eaterCell].m += msg.mass;
     } else if (msg.type === 'full') {
       networkFull = true;
-      setNetworkStatus('Server je pun — mogu da igraju najviše 2 osobe.');
+      setNetworkStatus('Server je pun — može da igra najviše 20 osoba.');
       networkSocket.close();
     } else if (msg.type === 'error') {
       setNetworkStatus(msg.message || 'Greška pri povezivanju sa serverom.');
@@ -571,11 +571,11 @@ function draw() {
 }
 
 function updateHud() {
-  const list = owners.filter(o => !o.bot && (o.cells.length || o.remote)).map(o => ({ o, m: total(o) })).sort((a, b) => b.m - a.m).slice(0, 10);
+  const list = owners.filter(o => !o.bot && (o.cells.length || o.remote)).map(o => ({ o, m: total(o) })).sort((a, b) => b.m - a.m);
   const hud = document.getElementById('hud');
   hud.replaceChildren();
   const heading = document.createElement('b');
-  heading.textContent = 'IGRAČI U SOBI';
+  heading.textContent = 'IGRAČI NA SERVERU';
   hud.append(heading);
   for (let i = 0; i < list.length; i++) {
     const entry = list[i], row = document.createElement('div');
