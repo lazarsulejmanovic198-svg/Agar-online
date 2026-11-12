@@ -708,12 +708,7 @@ function startGame() {
   me = newOwner(name, false);
   me.team = 'tim'; crew = [me]; ctrl = me;
   const m0 = me.cells[0];
-  const nearby = remotePlayers.values().next().value;
-  const target = nearby && nearby.cells[0];
-  const spawnX = target ? target.x : WS / 2;
-  const spawnY = target ? target.y : WS / 2;
-  m0.x = m0.px = clamp(spawnX + rnd(-140, 140), 600, WS - 600);
-  m0.y = m0.py = clamp(spawnY + rnd(-140, 140), 600, WS - 600);
+  m0.x = m0.px = clamp(m0.x, 600, WS - 600); m0.y = m0.py = clamp(m0.y, 600, WS - 600);
   maxMass = PLAYER_START_MASS; playing = true;
   splitQ = null; listening = null;
   document.getElementById('keys').style.display = 'none';
