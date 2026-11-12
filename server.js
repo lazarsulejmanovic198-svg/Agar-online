@@ -29,15 +29,25 @@ function broadcastWorld() {
   broadcast({ type: 'world', players: worldSnapshot() });
 }
 
-function validName(input) { return String(input || 'Igrač').replace(/[\u0000-\u001f]/g, '').slice(0, 12) || 'Igrač'; } function validPlayer(input) {
+function validName(input) { return String(input || 'Igrač').replace(/[\u0000-\u001f]/g, '').slice(0, 12) || 'Igrač'; }
+
+function validPlayer(input) {
   if (!input || typeof input !== 'object' || !Array.isArray(input.cells)) return null;
   const cells = input.cells.slice(0, MAX_CELLS);
-  if (cells.some(c => !c || !Number.isFinite(c.x) || !Number.isFinite(c.y) ||
-      !Number.isFinite(c.m) || c.x < 0 || c.x > WORLD_SIZE ||
-      c.y < 0 || c.y > WORLD_SIZE || c.m <= 0 || c.m > 1000000)) return null;
+  const cellIds = new Set();
+  for (let i = 0; i < cells.length; i++) {
+    const c = cells[i];
+    if (!c || !Number.isFinite(c.x) || !Number.isFinite(c.y) ||
+        !Number.isFinite(c.m) || c.x < 0 || c.x > WORLD_SIZE ||
+        c.y < 0 || c.y > WORLD_SIZE || c.m <= 0 || c.m > 1000000) return null;
+    const id = Number.isSafeInteger(c.id) && c.id >= 0 ? c.id : i;
+    if (cellIds.has(id)) return null;
+    cellIds.add(id);
+    cells[i] = { id, x: c.x, y: c.y, m: c.m };
+  }
   const name = validName(input.name);
   const color = /^hsl\(\d{1,3},100%,50%\)$/.test(input.color) ? input.color : 'hsl(140,100%,50%)';
-  return { name, color, cells: cells.map(c => ({ x: c.x, y: c.y, m: c.m })) };
+  return { name, color, cells };
 }
 
 function resolvePlayerCollisions() {
