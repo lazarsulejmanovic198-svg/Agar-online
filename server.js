@@ -41,7 +41,7 @@ function validName(input) { return String(input || 'Igrač').replace(/[\u0000-\u
 }
 
 function resolvePlayerCollisions() {
-  const active = Array.from(players.values()).filter(p => sockets.has(p.id));
+  const active = Array.from(players.values()).filter(p => p.active);
   for (let i = 0; i < active.length; i++) {
     for (let j = i + 1; j < active.length; j++) {
       const a = active[i], b = active[j];
