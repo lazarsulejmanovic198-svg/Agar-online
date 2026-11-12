@@ -7,7 +7,7 @@ const { WebSocket, WebSocketServer } = require('ws');
 const PORT = Number(process.env.PORT || 8080);
 const WORLD_SIZE = 5500;
 const MAX_CELLS = 64;
-const ROOM_CODE = process.env.GAME_ROOM || crypto.randomBytes(9).toString('hex');
+const MAX_PLAYERS = 20;
 const players = new Map();
 const sockets = new Map();
 
@@ -91,11 +91,7 @@ const server = http.createServer((req, res) => {
     res.end('Not found');
     return;
   }
-  if (url.searchParams.get('room') !== ROOM_CODE) {
-    res.writeHead(302, { Location: `/?room=${encodeURIComponent(ROOM_CODE)}`, 'Cache-Control': 'no-store' });
-    res.end();
-    return;
-  }
+  
   fs.readFile(path.join(__dirname, 'index.html'), (err, data) => {
     if (err) {
       console.error('Ne mogu da učitam index.html:', err);
@@ -116,7 +112,7 @@ const wsServer = new WebSocketServer({ noServer: true, maxPayload: 16384 });
 
 server.on('upgrade', (req, socket, head) => {
   const url = new URL(req.url, 'http://localhost');
-  if (url.pathname !== '/game' || url.searchParams.get('room') !== ROOM_CODE) {
+  if (url.pathname !== '/game') {
     socket.destroy();
     return;
   }
@@ -124,7 +120,7 @@ server.on('upgrade', (req, socket, head) => {
 });
 
 wsServer.on('connection', ws => {
-  if (sockets.size >= 2) {
+  if (sockets.size >= MAX_PLAYERS) {
     send(ws, { type: 'full' });
     ws.close(1008, 'Host je pun');
     return;
@@ -168,7 +164,7 @@ setInterval(() => {
 }, 50);
 
 server.listen(PORT, '0.0.0.0', () => {
-  console.log(`Host radi na http://localhost:${PORT}/?room=${ROOM_CODE}`);
-  console.log('Za brata prosledi javnu IP adresu ili domen uz isti /?room= kod.');
-  console.log('Na ruteru je potrebno proslediti TCP port ' + PORT + ' ka ovom računaru.');
+  console.log(`Host radi na http://localhost:${PORT}/`);
+  console.log('Podeli javni link sa igračima — svi ulaze na isti server.');
+  
 });
